@@ -486,78 +486,78 @@ class SquatDetector:
         # OPTIONAL DEBUG UI
         # ========================================================
 
-        cv2.putText(
-            frame,
-            f"Knee: {smooth_angle:.1f}",
-            (20, 35),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            (255, 255, 0),
-            2
-        )
+        # cv2.putText(
+        #     frame,
+        #     f"Knee: {smooth_angle:.1f}",
+        #     (20, 35),
+        #     cv2.FONT_HERSHEY_SIMPLEX,
+        #     0.65,
+        #     (255, 255, 0),
+        #     2
+        # )
 
-        cv2.putText(
-            frame,
-            f"State: {self.state}",
-            (20, 70),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.70,
-            (0, 255, 255),
-            2
-        )
+        # cv2.putText(
+        #     frame,
+        #     f"State: {self.state}",
+        #     (20, 70),
+        #     cv2.FONT_HERSHEY_SIMPLEX,
+        #     0.70,
+        #     (0, 255, 255),
+        #     2
+        # )
 
-        cv2.putText(
-            frame,
-            f"SQUATS: {self.rep_count}",
-            (20, 110),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.90,
-            (0, 255, 0),
-            3
-        )
+        # cv2.putText(
+        #     frame,
+        #     f"SQUATS: {self.rep_count}",
+        #     (20, 110),
+        #     cv2.FONT_HERSHEY_SIMPLEX,
+        #     0.90,
+        #     (0, 255, 0),
+        #     3
+        # )
 
-        cv2.putText(
-            frame,
-            self.feedback,
-            (20, 150),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.62,
-            (0, 255, 255),
-            2
-        )
+        # cv2.putText(
+        #     frame,
+        #     self.feedback,
+        #     (20, 150),
+        #     cv2.FONT_HERSHEY_SIMPLEX,
+        #     0.62,
+        #     (0, 255, 255),
+        #     2
+        # )
 
-        if self.calibrated:
+        # if self.calibrated:
 
-            cv2.putText(
-                frame,
-                "CALIBRATED",
-                (20, 190),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                (0, 255, 0),
-                2
-            )
+        #     cv2.putText(
+        #         frame,
+        #         "CALIBRATED",
+        #         (20, 190),
+        #         cv2.FONT_HERSHEY_SIMPLEX,
+        #         0.65,
+        #         (0, 255, 0),
+        #         2
+        #     )
 
-        else:
+        # else:
 
-            remaining = max(
-                0,
-                self.CALIBRATION_TIME
-                - (
-                    time.time()
-                    - self.calibration_start
-                )
-            )
+        #     remaining = max(
+        #         0,
+        #         self.CALIBRATION_TIME
+        #         - (
+        #             time.time()
+        #             - self.calibration_start
+        #         )
+        #     )
 
-            cv2.putText(
-                frame,
-                f"CALIBRATING: {remaining:.1f}s",
-                (20, 190),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                (0, 165, 255),
-                2
-            )
+            # cv2.putText(
+            #     frame,
+            #     f"CALIBRATING: {remaining:.1f}s",
+            #     (20, 190),
+            #     cv2.FONT_HERSHEY_SIMPLEX,
+            #     0.65,
+            #     (0, 165, 255),
+            #     2
+            # )
 
         # ========================================================
         # RETURN DATA

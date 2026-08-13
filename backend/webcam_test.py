@@ -5,18 +5,26 @@ from fitness_engine import FitnessEngine
 
 engine = FitnessEngine()
 
+engine.start_workout()
+
+print()
+print("====================================")
+print("BURN-EX WEBCAM TEST")
+print("====================================")
+print("1 = Squat")
+print("2 = Push-up")
+print("3 = Jumping Jack")
+print("4 = Crunch")
+print("Q = Quit")
+print("====================================")
+
+
 cap = cv2.VideoCapture(0)
 
 if not cap.isOpened():
-    print("ERROR: Could not open camera.")
+
+    print("ERROR: Camera could not open.")
     raise SystemExit
-
-
-# Start workout
-engine.start_workout()
-
-print("Workout started.")
-print("Press Q to quit.")
 
 
 while True:
@@ -24,29 +32,62 @@ while True:
     ret, frame = cap.read()
 
     if not ret:
-        print("ERROR: Could not read camera frame.")
         break
 
-    # Send camera frame to FitnessEngine
+    # -------------------------------------------------
+    # Keyboard selection
+    # -------------------------------------------------
+
+    key = cv2.waitKey(1) & 0xFF
+
+    if key == ord("1"):
+
+        engine.set_exercise("SQUAT")
+
+    elif key == ord("2"):
+
+        engine.set_exercise("PUSH-UP")
+
+    elif key == ord("3"):
+
+        engine.set_exercise("JUMPING JACK")
+
+    elif key == ord("4"):
+
+        engine.set_exercise("CRUNCH")
+
+    elif key == ord("q"):
+
+        break
+
+    # -------------------------------------------------
+    # Process frame
+    # -------------------------------------------------
+
     result = engine.process_frame(frame)
 
-    # Get processed frame from detector
-    display_frame = result.get("frame", frame)
+    display = result.get(
+        "frame",
+        frame
+    )
 
-    # Display backend result
+    # -------------------------------------------------
+    # UI
+    # -------------------------------------------------
+
     cv2.putText(
-        display_frame,
-        f"Exercise: {result.get('exercise', 'NO EXERCISE')}",
+        display,
+        f"Exercise: {result['exercise']}",
         (20, 40),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
+        0.75,
         (0, 255, 255),
         2
     )
 
     cv2.putText(
-        display_frame,
-        f"Reps: {result.get('reps', 0)}",
+        display,
+        f"Reps: {result['reps']}",
         (20, 80),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.9,
@@ -55,8 +96,8 @@ while True:
     )
 
     cv2.putText(
-        display_frame,
-        f"Form: {result.get('form', 'Waiting')}",
+        display,
+        f"Duration: {result['duration']:.1f}s",
         (20, 120),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.7,
@@ -65,32 +106,48 @@ while True:
     )
 
     cv2.putText(
-        display_frame,
-        result.get('feedback', ''),
+        display,
+        f"Form: {result['form']}",
         (20, 160),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255, 255, 0),
+        2
+    )
+
+    cv2.putText(
+        display,
+        result["feedback"],
+        (20, 200),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.65,
         (0, 255, 255),
         2
     )
 
-    cv2.imshow(
-        "Burn-Ex Backend Webcam Test",
-        display_frame
+    cv2.putText(
+        display,
+        "1:SQUAT 2:PUSHUP 3:JJ 4:CRUNCH",
+        (20, 240),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        (255, 255, 255),
+        1
     )
 
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
+    cv2.imshow(
+        "Burn-Ex",
+        display
+    )
 
 
-# Stop
 engine.stop_workout()
 
 cap.release()
 cv2.destroyAllWindows()
 
-engine.close()
-
-print("Workout stopped.")
-print("Final result:")
+print()
+print("FINAL WORKOUT RESULT")
 print(engine.get_status())
+
+engine.close()

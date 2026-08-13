@@ -119,6 +119,28 @@ def set_exercise():
             "message": str(e)
         }), 400
 
+@app.route("/api/workout/pause", methods=["POST"])
+def pause_workout():
+
+    result = fitness.pause_workout()
+
+    return jsonify({
+        "status": "success",
+        "message": "Workout paused",
+        "data": result
+    })
+
+
+@app.route("/api/workout/resume", methods=["POST"])
+def resume_workout():
+
+    result = fitness.resume_workout()
+
+    return jsonify({
+        "status": "success",
+        "message": "Workout resumed",
+        "data": result
+    })
 
 # ============================================================
 # RUN
