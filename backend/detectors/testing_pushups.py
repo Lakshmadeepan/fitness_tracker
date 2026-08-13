@@ -1,5 +1,5 @@
 import cv2
-from pushup_detector import PushupDetector
+from backend.detectors.pushup_detector import PushupDetector
 
 
 detector = PushupDetector()

@@ -9,10 +9,13 @@ class SquatDetector:
     def __init__(self):
 
         # ========================================================
-        # MEDIAPIPE
+        # MEDIAPIPE SETUP
         # ========================================================
 
         self.mp_pose = mp.solutions.pose
+
+        self.mp_draw = mp.solutions.drawing_utils
+
         self.pose = self.mp_pose.Pose(
             static_image_mode=False,
             model_complexity=1,
@@ -26,19 +29,26 @@ class SquatDetector:
         # ========================================================
 
         self.CALIBRATION_TIME = 3.0
+
         self.SMOOTHING_FRAMES = 10
 
+        # How much knee angle must decrease from standing
         self.DOWN_ANGLE_DROP = 45
+
+        # How close to standing before completing rep
         self.UP_ANGLE_DROP = 15
 
+        # Hip movement required
         self.HIP_DROP_MIN = 0.025
 
+        # Minimum visibility of important landmarks
         self.VISIBILITY_THRESHOLD = 0.60
 
+        # Prevent duplicate counting
         self.COOLDOWN_TIME = 0.6
 
         # ========================================================
-        # STATE
+        # VARIABLES
         # ========================================================
 
         self.rep_count = 0
@@ -46,9 +56,11 @@ class SquatDetector:
         self.state = "UP"
 
         self.angle_history = []
+
         self.hip_history = []
 
         self.standing_angles = []
+
         self.standing_hip_positions = []
 
         self.calibrated = False
@@ -60,10 +72,11 @@ class SquatDetector:
         self.feedback = "Stand still for calibration"
 
         self.baseline_angle = None
+
         self.baseline_hip = None
 
     # ============================================================
-    # ANGLE
+    # ANGLE FUNCTION
     # ============================================================
 
     def calculate_angle(self, a, b, c):
@@ -91,12 +104,14 @@ class SquatDetector:
             1.0
         )
 
-        return np.degrees(
+        angle = np.degrees(
             np.arccos(cosine_angle)
         )
 
+        return angle
+
     # ============================================================
-    # POINT
+    # LANDMARK → POINT
     # ============================================================
 
     def get_point(self, landmark):
@@ -112,17 +127,20 @@ class SquatDetector:
 
     def process_frame(self, frame):
 
+        # Mirror camera
         frame = cv2.flip(frame, 1)
 
+        # BGR → RGB
         rgb = cv2.cvtColor(
             frame,
             cv2.COLOR_BGR2RGB
         )
 
+        # MediaPipe
         results = self.pose.process(rgb)
 
         # ========================================================
-        # NO PERSON
+        # NO PERSON DETECTED
         # ========================================================
 
         if not results.pose_landmarks:
@@ -132,6 +150,7 @@ class SquatDetector:
                 "reps": self.rep_count,
                 "form": "Waiting",
                 "feedback": "NO PERSON DETECTED",
+                "state": self.state,
                 "calibrated": self.calibrated,
                 "frame": frame
             }
@@ -139,7 +158,7 @@ class SquatDetector:
         landmarks = results.pose_landmarks.landmark
 
         # ========================================================
-        # LANDMARKS
+        # IMPORTANT LANDMARKS
         # ========================================================
 
         left_hip = landmarks[
@@ -167,23 +186,27 @@ class SquatDetector:
         ]
 
         # ========================================================
-        # VISIBILITY
+        # SIDE / FRONT VIEW VISIBILITY
         # ========================================================
 
-        important_landmarks = [
-            left_hip,
-            right_hip,
-            left_knee,
-            right_knee,
-            left_ankle,
-            right_ankle
-        ]
-
-        visibility_ok = all(
-            lm.visibility >=
-            self.VISIBILITY_THRESHOLD
-            for lm in important_landmarks
+        left_visible = (
+            left_hip.visibility >= self.VISIBILITY_THRESHOLD
+            and
+            left_knee.visibility >= self.VISIBILITY_THRESHOLD
+            and
+            left_ankle.visibility >= self.VISIBILITY_THRESHOLD
         )
+
+        right_visible = (
+            right_hip.visibility >= self.VISIBILITY_THRESHOLD
+            and
+            right_knee.visibility >= self.VISIBILITY_THRESHOLD
+            and
+            right_ankle.visibility >= self.VISIBILITY_THRESHOLD
+        )
+
+        # At least one complete side must be visible
+        visibility_ok = left_visible or right_visible
 
         if not visibility_ok:
 
@@ -192,6 +215,7 @@ class SquatDetector:
                 "reps": self.rep_count,
                 "form": "Poor visibility",
                 "feedback": "Keep your full body visible",
+                "state": self.state,
                 "calibrated": self.calibrated,
                 "frame": frame
             }
@@ -200,45 +224,72 @@ class SquatDetector:
         # KNEE ANGLES
         # ========================================================
 
-        left_angle = self.calculate_angle(
-            self.get_point(left_hip),
-            self.get_point(left_knee),
-            self.get_point(left_ankle)
-        )
+        angles = []
 
-        right_angle = self.calculate_angle(
-            self.get_point(right_hip),
-            self.get_point(right_knee),
-            self.get_point(right_ankle)
-        )
+        # LEFT SIDE
+        if left_visible:
 
-        if left_angle is None or right_angle is None:
+            left_angle = self.calculate_angle(
+                self.get_point(left_hip),
+                self.get_point(left_knee),
+                self.get_point(left_ankle)
+            )
+
+            if left_angle is not None:
+                angles.append(left_angle)
+
+        # RIGHT SIDE
+        if right_visible:
+
+            right_angle = self.calculate_angle(
+                self.get_point(right_hip),
+                self.get_point(right_knee),
+                self.get_point(right_ankle)
+            )
+
+            if right_angle is not None:
+                angles.append(right_angle)
+
+        # No valid angle
+        if not angles:
 
             return {
                 "exercise": "NO EXERCISE",
                 "reps": self.rep_count,
                 "form": "Waiting",
                 "feedback": "Adjust your position",
+                "state": self.state,
                 "calibrated": self.calibrated,
                 "frame": frame
             }
 
-        average_knee_angle = (
-            left_angle +
-            right_angle
-        ) / 2
+        # If both legs are visible:
+        # average them.
+        #
+        # If one side is visible:
+        # use that side.
+        average_knee_angle = float(
+            np.mean(angles)
+        )
 
         # ========================================================
-        # HIP
+        # HIP POSITION
         # ========================================================
 
-        average_hip_y = (
-            left_hip.y +
-            right_hip.y
-        ) / 2
+        hip_values = []
+
+        if left_visible:
+            hip_values.append(left_hip.y)
+
+        if right_visible:
+            hip_values.append(right_hip.y)
+
+        average_hip_y = float(
+            np.mean(hip_values)
+        )
 
         # ========================================================
-        # SMOOTH KNEE
+        # SMOOTH KNEE ANGLE
         # ========================================================
 
         self.angle_history.append(
@@ -246,10 +297,11 @@ class SquatDetector:
         )
 
         if len(self.angle_history) > self.SMOOTHING_FRAMES:
+
             self.angle_history.pop(0)
 
-        smooth_angle = np.mean(
-            self.angle_history
+        smooth_angle = float(
+            np.mean(self.angle_history)
         )
 
         # ========================================================
@@ -261,21 +313,23 @@ class SquatDetector:
         )
 
         if len(self.hip_history) > self.SMOOTHING_FRAMES:
+
             self.hip_history.pop(0)
 
-        smooth_hip = np.mean(
-            self.hip_history
+        smooth_hip = float(
+            np.mean(self.hip_history)
         )
 
         # ========================================================
         # CALIBRATION
         # ========================================================
-
+        form = "CHECK"
+        
         if not self.calibrated:
 
             elapsed = (
-                time.time() -
-                self.calibration_start
+                time.time()
+                - self.calibration_start
             )
 
             self.standing_angles.append(
@@ -286,7 +340,12 @@ class SquatDetector:
                 smooth_hip
             )
 
-            if elapsed < self.CALIBRATION_TIME:
+            remaining = (
+                self.CALIBRATION_TIME
+                - elapsed
+            )
+
+            if remaining > 0:
 
                 self.feedback = (
                     "Stand normally..."
@@ -298,15 +357,21 @@ class SquatDetector:
                     self.standing_angles
                 ) > 10:
 
-                    self.baseline_angle = np.median(
-                        self.standing_angles
+                    self.baseline_angle = float(
+                        np.median(
+                            self.standing_angles
+                        )
                     )
 
-                    self.baseline_hip = np.median(
-                        self.standing_hip_positions
+                    self.baseline_hip = float(
+                        np.median(
+                            self.standing_hip_positions
+                        )
                     )
 
                     self.calibrated = True
+
+                    self.state = "UP"
 
                     self.feedback = (
                         "Calibration completed"
@@ -318,19 +383,21 @@ class SquatDetector:
 
         else:
 
+            # Adaptive thresholds
             down_threshold = (
-                self.baseline_angle -
-                self.DOWN_ANGLE_DROP
+                self.baseline_angle
+                - self.DOWN_ANGLE_DROP
             )
 
             up_threshold = (
-                self.baseline_angle -
-                self.UP_ANGLE_DROP
+                self.baseline_angle
+                - self.UP_ANGLE_DROP
             )
 
+            # Hip movement
             hip_drop = (
-                smooth_hip -
-                self.baseline_hip
+                smooth_hip
+                - self.baseline_hip
             )
 
             # ====================================================
@@ -340,11 +407,9 @@ class SquatDetector:
             if self.state == "UP":
 
                 if (
-                    smooth_angle <
-                    down_threshold
+                    smooth_angle < down_threshold
                     and
-                    hip_drop >
-                    self.HIP_DROP_MIN
+                    hip_drop > self.HIP_DROP_MIN
                 ):
 
                     self.state = "DOWN"
@@ -364,10 +429,9 @@ class SquatDetector:
                     current_time = time.time()
 
                     if (
-                        current_time -
-                        self.last_rep_time
-                        >
-                        self.COOLDOWN_TIME
+                        current_time
+                        - self.last_rep_time
+                        > self.COOLDOWN_TIME
                     ):
 
                         self.rep_count += 1
@@ -383,12 +447,14 @@ class SquatDetector:
                     )
 
             # ====================================================
-            # FORM
+            # FORM FEEDBACK
             # ====================================================
 
             if self.state == "DOWN":
 
                 if smooth_angle > 125:
+
+                    form = "CHECK"
 
                     self.feedback = (
                         "Go a little lower"
@@ -396,19 +462,102 @@ class SquatDetector:
 
                 else:
 
+                    form = "GOOD"
+
                     self.feedback = (
                         "Good depth"
                     )
 
+            else:
+
+                form = "GOOD"
+
         # ========================================================
-        # DRAW
+        # DRAW LANDMARKS
         # ========================================================
 
-        mp.solutions.drawing_utils.draw_landmarks(
+        self.mp_draw.draw_landmarks(
             frame,
             results.pose_landmarks,
             self.mp_pose.POSE_CONNECTIONS
         )
+
+        # ========================================================
+        # OPTIONAL DEBUG UI
+        # ========================================================
+
+        cv2.putText(
+            frame,
+            f"Knee: {smooth_angle:.1f}",
+            (20, 35),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (255, 255, 0),
+            2
+        )
+
+        cv2.putText(
+            frame,
+            f"State: {self.state}",
+            (20, 70),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.70,
+            (0, 255, 255),
+            2
+        )
+
+        cv2.putText(
+            frame,
+            f"SQUATS: {self.rep_count}",
+            (20, 110),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.90,
+            (0, 255, 0),
+            3
+        )
+
+        cv2.putText(
+            frame,
+            self.feedback,
+            (20, 150),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.62,
+            (0, 255, 255),
+            2
+        )
+
+        if self.calibrated:
+
+            cv2.putText(
+                frame,
+                "CALIBRATED",
+                (20, 190),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                (0, 255, 0),
+                2
+            )
+
+        else:
+
+            remaining = max(
+                0,
+                self.CALIBRATION_TIME
+                - (
+                    time.time()
+                    - self.calibration_start
+                )
+            )
+
+            cv2.putText(
+                frame,
+                f"CALIBRATING: {remaining:.1f}s",
+                (20, 190),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                (0, 165, 255),
+                2
+            )
 
         # ========================================================
         # RETURN DATA
@@ -417,16 +566,11 @@ class SquatDetector:
         return {
             "exercise": "SQUAT",
             "reps": self.rep_count,
-            "form": (
-                "GOOD"
-                if self.state == "DOWN"
-                and smooth_angle <= 125
-                else "CHECK"
-            ),
+            "form": form,
             "feedback": self.feedback,
             "state": self.state,
             "knee_angle": round(
-                float(smooth_angle),
+                smooth_angle,
                 2
             ),
             "calibrated": self.calibrated,

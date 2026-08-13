@@ -11,6 +11,10 @@ CORS(app)
 fitness = FitnessEngine()
 
 
+# ============================================================
+# HEALTH
+# ============================================================
+
 @app.route("/api/health", methods=["GET"])
 def health():
 
@@ -20,6 +24,10 @@ def health():
         "service": "AI Fitness Assistant"
     })
 
+
+# ============================================================
+# START
+# ============================================================
 
 @app.route("/api/workout/start", methods=["POST"])
 def start_workout():
@@ -33,6 +41,10 @@ def start_workout():
     })
 
 
+# ============================================================
+# STATUS
+# ============================================================
+
 @app.route("/api/workout/status", methods=["GET"])
 def workout_status():
 
@@ -42,23 +54,29 @@ def workout_status():
     })
 
 
-@app.route("/api/workout/update", methods=["POST"])
-def update_workout():
+# ============================================================
+# PROCESS FRAME
+# ============================================================
 
-    data = request.get_json() or {}
+@app.route("/api/workout/frame", methods=["POST"])
+def process_frame():
 
-    result = fitness.update(
-        exercise=data.get("exercise"),
-        reps=data.get("reps"),
-        form=data.get("form"),
-        feedback=data.get("feedback")
-    )
+    # For this step, we'll connect the webcam
+    # directly to Python first.
+    #
+    # So this endpoint is only a placeholder
+    # for the frontend integration.
 
     return jsonify({
         "status": "success",
-        "data": result
+        "message": "Frame endpoint ready",
+        "data": fitness.get_status()
     })
 
+
+# ============================================================
+# STOP
+# ============================================================
 
 @app.route("/api/workout/stop", methods=["POST"])
 def stop_workout():
@@ -71,6 +89,40 @@ def stop_workout():
         "data": result
     })
 
+
+@app.route("/api/workout/exercise", methods=["POST"])
+def set_exercise():
+
+    data = request.get_json() or {}
+
+    exercise = data.get("exercise")
+
+    if not exercise:
+        return jsonify({
+            "status": "error",
+            "message": "Exercise is required"
+        }), 400
+
+    try:
+
+        fitness.set_exercise(exercise)
+
+        return jsonify({
+            "status": "success",
+            "data": fitness.get_status()
+        })
+
+    except ValueError as e:
+
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 400
+
+
+# ============================================================
+# RUN
+# ============================================================
 
 if __name__ == "__main__":
 
