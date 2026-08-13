@@ -1,6 +1,5 @@
 import cv2
 import mediapipe as mp
-import numpy as np
 import time
 
 
@@ -15,40 +14,10 @@ pose = mp_pose.Pose(
     min_tracking_confidence=0.6
 )
 
-
-def angle(a, b, c):
-    a = np.array(a, dtype=np.float32)
-    b = np.array(b, dtype=np.float32)
-    c = np.array(c, dtype=np.float32)
-
-    ba = a - b
-    bc = c - b
-
-    d = np.linalg.norm(ba) * np.linalg.norm(bc)
-    if d == 0:
-        return None
-
-    cosine = np.clip(np.dot(ba, bc) / d, -1.0, 1.0)
-    return np.degrees(np.arccos(cosine))
-
-
 cap = cv2.VideoCapture(0)
 
 rep_count = 0
-state = "UP"
-
-angle_history = []
-hip_history = []
-
-standing_angles = []
-standing_hips = []
-
-calibrated = False
-calibration_start = time.time()
-
-baseline_angle = 0
-baseline_hip = 0
-
+state = "CLOSED"
 last_rep_time = 0
 
 while True:
@@ -66,178 +35,121 @@ while True:
 
         lm = results.pose_landmarks.landmark
 
-        lh = lm[mp_pose.PoseLandmark.LEFT_HIP]
-        lk = lm[mp_pose.PoseLandmark.LEFT_KNEE]
-        la = lm[mp_pose.PoseLandmark.LEFT_ANKLE]
+        ls = lm[mp_pose.PoseLandmark.LEFT_SHOULDER]
+        rs = lm[mp_pose.PoseLandmark.RIGHT_SHOULDER]
 
-        rh = lm[mp_pose.PoseLandmark.RIGHT_HIP]
-        rk = lm[mp_pose.PoseLandmark.RIGHT_KNEE]
+        lw = lm[mp_pose.PoseLandmark.LEFT_WRIST]
+        rw = lm[mp_pose.PoseLandmark.RIGHT_WRIST]
+
+        la = lm[mp_pose.PoseLandmark.LEFT_ANKLE]
         ra = lm[mp_pose.PoseLandmark.RIGHT_ANKLE]
 
         visible = all(
             x.visibility >= 0.60
-            for x in [lh, lk, la, rh, rk, ra]
+            for x in [ls, rs, lw, rw, la, ra]
         )
 
         if visible:
 
-            left = angle(
-                [lh.x, lh.y],
-                [lk.x, lk.y],
-                [la.x, la.y]
-            )
+            shoulder_width = abs(ls.x - rs.x)
+            ankle_width = abs(la.x - ra.x)
 
-            right = angle(
-                [rh.x, rh.y],
-                [rk.x, rk.y],
-                [ra.x, ra.y]
-            )
+            if shoulder_width > 0.01:
 
-            knee = (left + right) / 2
-            hip_y = (lh.y + rh.y) / 2
+                leg_ratio = ankle_width / shoulder_width
 
-            angle_history.append(knee)
-            hip_history.append(hip_y)
+                shoulder_y = (ls.y + rs.y) / 2
+                wrist_y = (lw.y + rw.y) / 2
 
-            if len(angle_history) > 10:
-                angle_history.pop(0)
-
-            if len(hip_history) > 10:
-                hip_history.pop(0)
-
-            smooth_angle = np.mean(angle_history)
-            smooth_hip = np.mean(hip_history)
-
-            # ---------------- CALIBRATION ----------------
-
-            if not calibrated:
-
-                standing_angles.append(smooth_angle)
-                standing_hips.append(smooth_hip)
-
-                remaining = 3 - (
-                    time.time() - calibration_start
+                hands_up = (
+                    wrist_y < shoulder_y - 0.08
                 )
 
-                if remaining > 0:
+                legs_open = (
+                    leg_ratio > 1.35
+                )
 
-                    feedback = "Stand normally..."
+                open_position = (
+                    hands_up and legs_open
+                )
 
-                else:
+                if state == "CLOSED":
 
-                    baseline_angle = np.median(
-                        standing_angles
-                    )
+                    if open_position:
 
-                    baseline_hip = np.median(
-                        standing_hips
-                    )
+                        state = "OPEN"
 
-                    calibrated = True
+                elif state == "OPEN":
 
-                    feedback = "Calibration complete"
-
-            # ---------------- DETECTION ----------------
-
-            else:
-
-                down_threshold = baseline_angle - 45
-                up_threshold = baseline_angle - 15
-
-                hip_drop = smooth_hip - baseline_hip
-
-                if state == "UP":
-
-                    if (
-                        smooth_angle < down_threshold
-                        and
-                        hip_drop > 0.025
-                    ):
-
-                        state = "DOWN"
-
-                        feedback = "Squat down"
-
-                elif state == "DOWN":
-
-                    if smooth_angle > up_threshold:
+                    if not hands_up and not legs_open:
 
                         now = time.time()
 
-                        if now - last_rep_time > 0.6:
+                        if now - last_rep_time > 0.5:
 
                             rep_count += 1
                             last_rep_time = now
 
-                        state = "UP"
-                        feedback = "Rep completed"
+                        state = "CLOSED"
 
-            mp_draw.draw_landmarks(
-                frame,
-                results.pose_landmarks,
-                mp_pose.POSE_CONNECTIONS
-            )
+                mp_draw.draw_landmarks(
+                    frame,
+                    results.pose_landmarks,
+                    mp_pose.POSE_CONNECTIONS
+                )
+
+                cv2.putText(
+                    frame,
+                    f"Leg Ratio: {leg_ratio:.2f}",
+                    (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (255,255,0),
+                    2
+                )
+
+                cv2.putText(
+                    frame,
+                    f"State: {state}",
+                    (20, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0,255,255),
+                    2
+                )
+
+                cv2.putText(
+                    frame,
+                    f"JUMPING JACKS: {rep_count}",
+                    (20, 125),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9,
+                    (0,255,0),
+                    3
+                )
+
+        else:
 
             cv2.putText(
                 frame,
-                f"Knee: {smooth_angle:.1f}",
-                (20, 35),
+                "Keep full body visible",
+                (20, 50),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (255,255,0),
+                0.8,
+                (0,0,255),
                 2
             )
 
-            cv2.putText(
-                frame,
-                f"State: {state}",
-                (20, 70),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0,255,255),
-                2
-            )
-
-            cv2.putText(
-                frame,
-                f"SQUATS: {rep_count}",
-                (20, 115),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                (0,255,0),
-                3
-            )
-
-            cv2.putText(
-                frame,
-                feedback if calibrated else f"{max(0, remaining):.1f}s",
-                (20, 155),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0,255,255),
-                2
-            )
-
-    else:
-
-        cv2.putText(
-            frame,
-            "NO PERSON DETECTED",
-            (20, 50),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (0,0,255),
-            2
-        )
-
-    cv2.imshow("Squat Test", frame)
+    cv2.imshow(
+        "Jumping Jack Test",
+        frame
+    )
 
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
-
 
 cap.release()
 cv2.destroyAllWindows()
 pose.close()
 
-print("Total squats:", rep_count)
+print("Total jumping jacks:", rep_count)
